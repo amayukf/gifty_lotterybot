@@ -1,0 +1,8 @@
+node_modules/
+.tgcloud/
+.wrangler/
+dist/
+.env
+*.log
+tmp_uuid.txt
+tail_logs.json

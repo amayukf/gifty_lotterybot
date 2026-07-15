@@ -1,0 +1,17 @@
+name = "lucky100-bot"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# You can set these environment variables locally for dev/wrangler.
+# For production, set them using `wrangler secret put` or the Cloudflare dashboard.
+ADMIN_TELEGRAM_IDS = "7246324907"
+TICKET_PRICE = "10"
+MAX_TICKETS = "100"
+REFERRAL_REWARD = "5"
+ROUND_DURATION_MINUTES = "15"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lucky100-db"
+database_id = "eb8d3756-7353-4471-8d2e-66dba2e1925f"
