@@ -592,7 +592,8 @@ export default async function (message) {
       });
       return;
     }
-    const [key, value] = args;
+    const value = args[args.length - 1];
+    const key = args.slice(0, -1).join('_').toLowerCase();
     if (!key || value === undefined) {
       await api.sendMessage({ chat_id: chatId, text: 'Usage: /settings <key> <value>' });
       return;
