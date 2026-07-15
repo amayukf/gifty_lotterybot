@@ -2,6 +2,7 @@ import { api } from '../lib/api.js';
 import * as storage from '../lib/storage.js';
 import * as scheduler from '../lib/scheduler.js';
 import { config, isAdmin } from '../lib/config.js';
+import { generateTicketGrid } from '../lib/keyboard.js';
 
 export default async function (message) {
   if (!message || !message.from || !message.chat) {
@@ -83,26 +84,16 @@ export default async function (message) {
 
     const tickets = await storage.getTicketsForRound(round.id);
     const takenNumbers = new Set(tickets.map(t => t.ticketNumber));
-    const availableNumbers = [];
-    for (let i = 1; i <= round.maxTickets; i++) {
-      if (!takenNumbers.has(i)) {
-        availableNumbers.push(i);
-      }
-    }
-    const remaining = availableNumbers.length;
-    
-    let availableText = '';
-    if (remaining <= 20) {
-      availableText = `\nAvailable numbers: ${availableNumbers.join(', ')}`;
-    } else {
-      availableText = `\n${remaining} numbers available (choose 1-${round.maxTickets})`;
-    }
+    const remaining = round.maxTickets - tickets.length;
 
     await storage.setUserScene(telegramId, 'buy_ticket');
     
+    const replyMarkup = generateTicketGrid(round, takenNumbers);
+
     await api.sendMessage({
       chat_id: chatId,
-      text: `🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice}\n📊 Tickets remaining: ${remaining}/${round.maxTickets}${availableText}\n\nReply with your chosen ticket number!`
+      text: `🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice} USDT\n📊 Tickets remaining: ${remaining}/${round.maxTickets}\n\nSelect a number from the grid below to purchase (or type it):`,
+      reply_markup: replyMarkup
     });
     return;
   }

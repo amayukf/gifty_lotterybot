@@ -1,6 +1,8 @@
 import { api } from '../lib/api.js';
 import * as storage from '../lib/storage.js';
 import { isAdmin } from '../lib/config.js';
+import { generateTicketGrid } from '../lib/keyboard.js';
+import * as scheduler from '../lib/scheduler.js';
 
 export default async function (callbackQuery) {
   if (!callbackQuery || !callbackQuery.from) {
@@ -11,18 +13,115 @@ export default async function (callbackQuery) {
   const data = callbackQuery.data || '';
   const queryId = callbackQuery.id;
 
-  // 1. Verify admin privilege
-  if (!isAdmin(telegramId)) {
-    await api.answerCallbackQuery({
-      callback_query_id: queryId,
-      text: 'Access denied.',
-      show_alert: true
-    });
-    return;
+  // 1. Verify admin privilege if the action is an admin command
+  if (data.startsWith('admin:')) {
+    if (!isAdmin(telegramId)) {
+      await api.answerCallbackQuery({
+        callback_query_id: queryId,
+        text: 'Access denied.',
+        show_alert: true
+      });
+      return;
+    }
   }
 
   const chat_id = callbackQuery.message?.chat?.id;
   const message_id = callbackQuery.message?.message_id;
+
+  // --- User callbacks (ticket purchase/interactions) ---
+  if (data.startsWith('ticket:taken:')) {
+    const ticketNum = data.split(':')[2];
+    await api.answerCallbackQuery({
+      callback_query_id: queryId,
+      text: `Ticket #${ticketNum} has already been purchased.`,
+      show_alert: false
+    });
+    return;
+  }
+
+  if (data.startsWith('ticket:buy:')) {
+    const parts = data.split(':');
+    const roundId = Number(parts[2]);
+    const ticketNumber = Number(parts[3]);
+
+    const round = await storage.getRoundById(roundId);
+    if (!round || round.status !== 'open') {
+      await api.answerCallbackQuery({
+        callback_query_id: queryId,
+        text: 'This round has ended or is not open.',
+        show_alert: true
+      });
+      return;
+    }
+
+    const userRecord = await storage.getUserByTelegramId(telegramId);
+    if (!userRecord || userRecord.isBanned) {
+      await api.answerCallbackQuery({
+        callback_query_id: queryId,
+        text: 'Access suspended.',
+        show_alert: true
+      });
+      return;
+    }
+
+    const tickets = await storage.getTicketsForRound(round.id);
+    const existing = tickets.find(t => t.ticketNumber === ticketNumber);
+    if (existing) {
+      await api.answerCallbackQuery({
+        callback_query_id: queryId,
+        text: 'This ticket number has already been taken!',
+        show_alert: true
+      });
+      return;
+    }
+
+    const wallet = await storage.getWallet(userRecord.id);
+    if (!wallet || wallet.balance < round.ticketPrice) {
+      await api.answerCallbackQuery({
+        callback_query_id: queryId,
+        text: `Insufficient balance! Cost: ${round.ticketPrice} USDT. Balance: ${wallet?.balance ?? 0} USDT.`,
+        show_alert: true
+      });
+      return;
+    }
+
+    // Complete ticket purchase
+    await storage.buyTicket(round.id, userRecord.id, ticketNumber);
+    await storage.updateWalletBalance(userRecord.id, -round.ticketPrice);
+    await storage.addTransaction(userRecord.id, 'lottery_purchase', round.ticketPrice, round.id, `Ticket ${ticketNumber}`);
+
+    await api.answerCallbackQuery({
+      callback_query_id: queryId,
+      text: `🎉 Ticket #${ticketNumber} purchased successfully!`,
+      show_alert: true
+    });
+
+    // Run draw check (starts round creation/finalization dynamically)
+    await scheduler.maybeDrawRound(round.id);
+
+    // Refresh UI
+    const updatedRound = await storage.getRoundById(round.id);
+    if (updatedRound && updatedRound.status === 'open') {
+      const updatedTickets = await storage.getTicketsForRound(round.id);
+      const updatedTaken = new Set(updatedTickets.map(t => t.ticketNumber));
+      const remaining = updatedRound.maxTickets - updatedTickets.length;
+      const replyMarkup = generateTicketGrid(updatedRound, updatedTaken);
+
+      await api.editMessageText({
+        chat_id: callbackQuery.message.chat.id,
+        message_id: callbackQuery.message.message_id,
+        text: `🎟️ Round #${updatedRound.roundNumber}\n🎫 Price: ${updatedRound.ticketPrice} USDT\n📊 Tickets remaining: ${remaining}/${updatedRound.maxTickets}\n\nSelect a number from the grid below to purchase (or type it):`,
+        reply_markup: replyMarkup
+      });
+    } else {
+      await api.editMessageText({
+        chat_id: callbackQuery.message.chat.id,
+        message_id: callbackQuery.message.message_id,
+        text: `🎟️ Round #${round.roundNumber} has been drawn and finalized!`
+      });
+    }
+    return;
+  }
 
   const editResponse = async (newText) => {
     if (!chat_id || !message_id) return;
