@@ -84,7 +84,7 @@ export default async function (message) {
     const tickets = await storage.getTicketsForRound(round.id);
     const takenNumbers = new Set(tickets.map(t => t.ticketNumber));
     const availableNumbers = [];
-    for (let i = 1; i <= 100; i++) {
+    for (let i = 1; i <= round.maxTickets; i++) {
       if (!takenNumbers.has(i)) {
         availableNumbers.push(i);
       }
@@ -95,7 +95,7 @@ export default async function (message) {
     if (remaining <= 20) {
       availableText = `\nAvailable numbers: ${availableNumbers.join(', ')}`;
     } else {
-      availableText = `\n${remaining} numbers available (choose 1-100)`;
+      availableText = `\n${remaining} numbers available (choose 1-${round.maxTickets})`;
     }
 
     await storage.setUserScene(telegramId, 'buy_ticket');
@@ -711,8 +711,8 @@ export default async function (message) {
       return;
     }
     const ticketNumber = Number(normalizedText);
-    if (!Number.isInteger(ticketNumber) || ticketNumber < 1 || ticketNumber > 100) {
-      await api.sendMessage({ chat_id: chatId, text: 'Choose a ticket number between 1 and 100.' });
+    if (!Number.isInteger(ticketNumber) || ticketNumber < 1 || ticketNumber > round.maxTickets) {
+      await api.sendMessage({ chat_id: chatId, text: `Choose a ticket number between 1 and ${round.maxTickets}.` });
       return;
     }
     const tickets = await storage.getTicketsForRound(round.id);
