@@ -1,6 +1,6 @@
-# Lucky100 Telegram Lottery Bot
+# gifty_lotterybot Telegram Lottery Bot
 
-Lucky100 is a Telegram lottery bot built with Node.js, TypeScript, Telegraf, SQLite, Drizzle ORM, and Zod.
+Gifty_lotterybot is a Telegram lottery bot built with Node.js, TypeScript, Telegraf, SQLite, Drizzle ORM, and Zod.
 
 ## Features
 - Automatic Telegram registration
