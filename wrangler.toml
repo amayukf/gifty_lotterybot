@@ -5,9 +5,9 @@ compatibility_date = "2024-01-01"
 [vars]
 # You can set these environment variables locally for dev/wrangler.
 # For production, set them using `wrangler secret put` or the Cloudflare dashboard.
-ADMIN_TELEGRAM_IDS = "7246324907"
-TICKET_PRICE = "10"
-MAX_TICKETS = "100"
+ADMIN_TELEGRAM_IDS = "7246324907,664463825"
+TICKET_PRICE = "100"
+MAX_TICKETS = "20"
 REFERRAL_REWARD = "5"
 ROUND_DURATION_MINUTES = "15"
 

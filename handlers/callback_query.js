@@ -79,7 +79,7 @@ export default async function (callbackQuery) {
     if (!wallet || wallet.balance < round.ticketPrice) {
       await api.answerCallbackQuery({
         callback_query_id: queryId,
-        text: `Insufficient balance! Cost: ${round.ticketPrice} USDT. Balance: ${wallet?.balance ?? 0} USDT.`,
+        text: `Insufficient balance! Cost: ${round.ticketPrice} ETB. Balance: ${wallet?.balance ?? 0} ETB.`,
         show_alert: true
       });
       return;
@@ -110,7 +110,7 @@ export default async function (callbackQuery) {
       await api.editMessageText({
         chat_id: callbackQuery.message.chat.id,
         message_id: callbackQuery.message.message_id,
-        text: `🎟️ Round #${updatedRound.roundNumber}\n🎫 Price: ${updatedRound.ticketPrice} USDT\n📊 Tickets remaining: ${remaining}/${updatedRound.maxTickets}\n\nSelect a number from the grid below to purchase (or type it):`,
+        text: `🎟️ Round #${updatedRound.roundNumber}\n🎫 Price: ${updatedRound.ticketPrice} ETB\n📊 Tickets remaining: ${remaining}/${updatedRound.maxTickets}\n\nSelect a number from the grid below to purchase (or type it):`,
         reply_markup: replyMarkup
       });
     } else {
@@ -266,6 +266,42 @@ export default async function (callbackQuery) {
     await editResponse(`Analytics:\nUsers: ${analytics.totalUsers}\nBanned: ${analytics.totalBannedUsers}\nApproved deposits: ${analytics.totalDeposits}\nApproved withdrawals: ${analytics.totalWithdrawals}\nTickets sold: ${analytics.totalTickets}\nTotal balance: ${analytics.totalBalance}\nActive round: ${analytics.activeRound?.roundNumber ?? 'none'} (${analytics.activeRound?.status ?? 'n/a'})`);
     await api.answerCallbackQuery({ callback_query_id: queryId });
     return;
+  }
+
+  const supportMatches = data.match(/^admin:support:(reply|resolve):(\d+)$/);
+  if (supportMatches) {
+    const [, action, rawId] = supportMatches;
+    const ticketId = Number(rawId);
+
+    if (action === 'reply') {
+      await api.answerCallbackQuery({ callback_query_id: queryId });
+      await api.sendMessage({
+        chat_id: telegramId,
+        text: `Please type your reply to Ticket #${ticketId} (or send /cancel):`
+      });
+      await storage.setUserScene(telegramId, 'admin_reply_support', ticketId);
+      return;
+    }
+
+    if (action === 'resolve') {
+      const ticket = await storage.resolveSupportTicket(ticketId);
+      await api.answerCallbackQuery({ callback_query_id: queryId, text: 'Ticket resolved' });
+      await editResponse(`Ticket #${ticketId} resolved.`);
+      if (ticket) {
+        const targetUser = await storage.getUserById(ticket.userId);
+        if (targetUser) {
+          try {
+            await api.sendMessage({
+              chat_id: targetUser.telegramId,
+              text: `✅ Your support request (Ticket #${ticketId}) has been marked as resolved.`
+            });
+          } catch (err) {
+            // ignore
+          }
+        }
+      }
+      return;
+    }
   }
 
   // --- Dynamic action matches: admin:(deposit|withdrawal):(view|approve|reject):(\d+) ---

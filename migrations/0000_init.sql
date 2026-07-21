@@ -102,3 +102,14 @@ CREATE TABLE IF NOT EXISTS `settings` (
   `value` text NOT NULL,
   `updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS `support_tickets` (
+  `id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+  `user_id` integer NOT NULL,
+  `message` text NOT NULL,
+  `status` text DEFAULT 'open' NOT NULL,
+  `admin_reply` text,
+  `created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  `resolved_at` text
+);
+

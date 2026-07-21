@@ -15,6 +15,7 @@ export async function ensureSchema(db: LibSQLDatabase<any>) {
     `CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id), type TEXT NOT NULL, amount REAL NOT NULL, related_id INTEGER, description TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS referrals (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER NOT NULL REFERENCES users(id), referred_user_id INTEGER NOT NULL REFERENCES users(id), reward_amount REAL NOT NULL, status TEXT DEFAULT 'pending' NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, telegram_id INTEGER NOT NULL UNIQUE, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS support_tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT DEFAULT 'open' NOT NULL, admin_reply TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL, resolved_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)`
   ];
 
@@ -29,8 +30,8 @@ export async function ensureSchema(db: LibSQLDatabase<any>) {
 
   const defaultSettings = [
     ['current_round', '1'],
-    ['default_ticket_price', '10'],
-    ['default_max_tickets', '100'],
+    ['default_ticket_price', '100'],
+    ['default_max_tickets', '20'],
     ['default_prize_percentage', '70'],
     ['default_fee_percentage', '10']
   ];
@@ -44,7 +45,7 @@ export async function ensureSchema(db: LibSQLDatabase<any>) {
   // Only insert initial round if there are no rounds at all
   const allRounds = await client.execute({ sql: 'SELECT id FROM lottery_rounds', args: [] });
     if (!allRounds.rows.length) {
-      await client.execute({ sql: 'INSERT INTO lottery_rounds (round_number, status, max_tickets, ticket_price) VALUES (?, ?, ?, ?)', args: [1, 'open', 100, 10] });
+      await client.execute({ sql: 'INSERT INTO lottery_rounds (round_number, status, max_tickets, ticket_price) VALUES (?, ?, ?, ?)', args: [1, 'open', 20, 100] });
     }
 }
 

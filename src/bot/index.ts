@@ -6,7 +6,7 @@ import { StorageService } from '../services/storage.js';
 
 export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
   const storage = new StorageService(db);
-  const scenes = new Map<number, { state: string; depositId?: number }>();
+  const scenes = new Map<number, { state: string; depositId?: number; ticketId?: number }>();
 
   const ensureRound = async () => {
     const existingRound = await storage.getActiveRound();
@@ -53,7 +53,7 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
     const message = user
       ? `🎉 Welcome to Lucky100, ${name}!\n\n🎟️ Play the lottery\n💰 Manage your wallet\n💳 Deposit or withdraw funds easily\n\n📢 Your referral link: https://t.me/${(await ctx.telegram.getMe()).username}?start=ref_${user.referralCode}\nShare it with friends to earn rewards!`
       : '🎉 Welcome to Lucky100!';
-    await ctx.reply(message, Markup.keyboard([['🎟️ Play', '💰 Wallet'], ['💳 Deposit', '💸 Withdraw'], ['📜 History', '❓ Help']]).resize());
+    await ctx.reply(message, Markup.keyboard([['🎟️ Play', '💰 Wallet'], ['💳 Deposit', '💸 Withdraw'], ['📜 History', '💬 Support', '❓ Help']]).resize());
   });
 
   // Map emoji buttons to commands
@@ -131,13 +131,27 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
   bot.hears('❓ Help', async (ctx) => {
     const isAdminUser = ctx.from ? isAdmin(ctx.from.id) : false;
     const adminLine = isAdminUser ? '\n/admin - Admin dashboard' : '';
-    await ctx.reply(`🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link${adminLine}`);
+    await ctx.reply(`🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link\n/support - Contact support${adminLine}`);
   });
 
   bot.command('help', async (ctx) => {
     const isAdminUser = ctx.from ? isAdmin(ctx.from.id) : false;
     const adminLine = isAdminUser ? '\n/admin - Admin dashboard' : '';
-    await ctx.reply(`🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link${adminLine}`);
+    await ctx.reply(`🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link\n/support - Contact support${adminLine}`);
+  });
+
+  bot.hears('💬 Support', async (ctx) => {
+    const user = await ensureUser(ctx);
+    if (!user) return;
+    await ctx.reply('💬 Please send your message or question below. Our support team will reply directly to this chat.\n\nSend /cancel to discard.');
+    scenes.set(ctx.from!.id, { state: 'support_message' });
+  });
+
+  bot.command('support', async (ctx) => {
+    const user = await ensureUser(ctx);
+    if (!user) return;
+    await ctx.reply('💬 Please send your message or question below. Our support team will reply directly to this chat.\n\nSend /cancel to discard.');
+    scenes.set(ctx.from!.id, { state: 'support_message' });
   });
 
   bot.command('wallet', async (ctx) => {
@@ -171,23 +185,7 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
     }
 
     const tickets = await storage.getTicketsForRound(round.id);
-    const takenNumbers = new Set(tickets.map(t => t.ticketNumber));
-    const availableNumbers: number[] = [];
-    const maxTicketNumber = 100;
-    for (let i = 1; i <= maxTicketNumber; i++) {
-      if (!takenNumbers.has(i)) availableNumbers.push(i);
-    }
-    const remaining = availableNumbers.length;
-    
-    // Show available numbers in a readable way
-    let availableText = '';
-    if (remaining <= 20) {
-      availableText = `\nAvailable numbers: ${availableNumbers.join(', ')}`;
-    } else {
-      availableText = `\n${remaining} numbers available (choose 1-100)`;
-    }
-    
-    await ctx.reply(`🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice}\n📊 Tickets remaining: ${remaining}/${round.maxTickets}${availableText}\n\nReply with your chosen ticket number!`);
+    await ctx.reply(`🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice}\n📊 Tickets sold: ${tickets.length}\n\nReply with a number between 1 and 100 to purchase your ticket!`);
     scenes.set(ctx.from!.id, { state: 'buy_ticket' });
   });
 
@@ -230,6 +228,22 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
       return;
     }
 
+    // Pre-draw notification
+    const uniqueBuyerIds = [...new Set(tickets.map(t => t.userId))];
+    const uniqueBuyers = await Promise.all(uniqueBuyerIds.map(id => storage.getUserById(id)));
+    for (const buyer of uniqueBuyers) {
+      if (buyer) {
+        try {
+          await bot.telegram.sendMessage(buyer.telegramId, `🔔 Lottery round #${round.roundNumber} is now drawing... Best of luck!`);
+        } catch (err) {
+          console.error(`Failed to send pre-draw message to user ${buyer.telegramId}:`, err);
+        }
+      }
+    }
+
+    // Artificial 10-second suspense delay
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+
     const winningIndex = Math.floor(Math.random() * tickets.length);
     const winner = tickets[winningIndex];
     if (winner) {
@@ -245,10 +259,19 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
       await storage.updateWalletBalance(winner.userId, prizeAmount);
       await storage.addTransaction(winner.userId, 'lottery_win', prizeAmount, round.id, `Won round #${round.roundNumber} with ticket ${winner.ticketNumber}`);
       
-      try {
-        await bot.telegram.sendMessage(winner.userId, `🎉 Lottery round #${round.roundNumber} has been drawn. You won ticket ${winner.ticketNumber}! Prize of ${prizeAmount} has been credited to your wallet!`);
-      } catch (err) {
-        console.error(`Failed to send win message to user ${winner.userId}:`, err);
+      // Notify everyone
+      for (const buyer of uniqueBuyers) {
+        if (buyer) {
+          try {
+            if (buyer.id === winner.userId) {
+              await bot.telegram.sendMessage(buyer.telegramId, `🎉 Lottery round #${round.roundNumber} has been drawn!\nYou won with ticket ${winner.ticketNumber}!\n\nPrize of ${prizeAmount} has been credited to your wallet!`);
+            } else {
+              await bot.telegram.sendMessage(buyer.telegramId, `ℹ️ Lottery round #${round.roundNumber} has been drawn.\nThe winning ticket was ${winner.ticketNumber}.\n\nBetter luck next time!`);
+            }
+          } catch (err) {
+            console.error(`Failed to send post-draw message to user ${buyer.telegramId}:`, err);
+          }
+        }
       }
     }
   }
@@ -528,6 +551,80 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
     await ctx.reply(`Round #${round.roundNumber} paused.`);
   });
 
+  bot.command('credit', async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('Access denied.');
+      return;
+    }
+    const parts = ctx.message.text.split(/\s+/);
+    if (parts.length < 3) {
+      await ctx.reply('Usage: /credit <user_id> <amount>');
+      return;
+    }
+    const userId = Number(parts[1]);
+    const amount = Number(parts[2]);
+    if (!Number.isFinite(userId) || !Number.isFinite(amount) || amount <= 0) {
+      await ctx.reply('Invalid user ID or amount.');
+      return;
+    }
+    
+    await storage.updateWalletBalance(userId, amount);
+    await storage.addTransaction(userId, 'admin_adjustment', amount, undefined, 'Admin credited balance');
+    
+    await ctx.reply(`Successfully credited ${amount} ETB to user ${userId}.`);
+    const targetUser = await storage.getUserById(userId);
+    if (targetUser) {
+      try {
+        await bot.telegram.sendMessage(targetUser.telegramId, `💰 Your wallet has been credited with ${amount} ETB by an admin.`);
+      } catch (err) {
+        // ignore
+      }
+    }
+  });
+
+  bot.command('debit', async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('Access denied.');
+      return;
+    }
+    const parts = ctx.message.text.split(/\s+/);
+    if (parts.length < 3) {
+      await ctx.reply('Usage: /debit <user_id> <amount>');
+      return;
+    }
+    const userId = Number(parts[1]);
+    const amount = Number(parts[2]);
+    if (!Number.isFinite(userId) || !Number.isFinite(amount) || amount <= 0) {
+      await ctx.reply('Invalid user ID or amount.');
+      return;
+    }
+    
+    await storage.updateWalletBalance(userId, -amount);
+    await storage.addTransaction(userId, 'admin_adjustment', -amount, undefined, 'Admin debited balance');
+    
+    await ctx.reply(`Successfully debited ${amount} ETB from user ${userId}.`);
+    const targetUser = await storage.getUserById(userId);
+    if (targetUser) {
+      try {
+        await bot.telegram.sendMessage(targetUser.telegramId, `📉 Your wallet has been debited ${amount} ETB by an admin.`);
+      } catch (err) {
+        // ignore
+      }
+    }
+  });
+
+  bot.command('export', async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.reply('Access denied.');
+      return;
+    }
+    const csvContent = await storage.exportTransactionsCSV();
+    await ctx.replyWithDocument({
+      source: Buffer.from(csvContent, 'utf-8'),
+      filename: `transactions_export_${Date.now()}.csv`
+    }, { caption: 'Here is the CSV export of all transactions.' });
+  });
+
   bot.command('resume_round', async (ctx) => {
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       await ctx.reply('Access denied.');
@@ -797,6 +894,44 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
     await ctx.answerCbQuery();
   });
 
+  bot.action(/^admin:support:(reply|resolve):(\d+)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) {
+      await ctx.answerCbQuery('Access denied.');
+      return;
+    }
+
+    const [, action, rawId] = ctx.match;
+    const ticketId = Number(rawId);
+
+    if (action === 'reply') {
+      await ctx.answerCbQuery();
+      await ctx.reply(`Please type your reply to Ticket #${ticketId} (or send /cancel):`);
+      scenes.set(ctx.from.id, { state: 'admin_reply_support', ticketId });
+      return;
+    }
+
+    if (action === 'resolve') {
+      const ticket = await storage.resolveSupportTicket(ticketId);
+      await ctx.answerCbQuery('Ticket resolved.');
+      try {
+        await ctx.editMessageText(`Ticket #${ticketId} has been resolved.`);
+      } catch {
+        // ignore
+      }
+      if (ticket) {
+        const targetUser = await storage.getUserById(ticket.userId);
+        if (targetUser) {
+          try {
+            await bot.telegram.sendMessage(targetUser.telegramId, `✅ Your support request (Ticket #${ticketId}) has been marked as resolved.`);
+          } catch {
+            // ignore
+          }
+        }
+      }
+      return;
+    }
+  });
+
   // Handle existing deposit/withdrawal callbacks
   bot.action(/^admin:(deposit|withdrawal):(view|approve|reject):(\d+)$/, async (ctx) => {
     if (!ctx.from || !isAdmin(ctx.from.id)) {
@@ -909,8 +1044,77 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
     const user = await ensureUser(ctx);
     if (!user || !ctx.from) return;
 
+    if (ctx.message.text === '/cancel') {
+      scenes.delete(ctx.from.id);
+      await ctx.reply('Command canceled.', Markup.keyboard([['🎟️ Play', '💰 Wallet'], ['💳 Deposit', '💸 Withdraw'], ['📜 History', '💬 Support', '❓ Help']]).resize());
+      return;
+    }
+
     const state = scenes.get(ctx.from.id);
     if (!state) {
+      return;
+    }
+
+    if (state.state === 'support_message') {
+      const userMsg = ctx.message.text;
+      const ticket = await storage.createSupportTicket(user.id, userMsg);
+      
+      const walletInfo = await storage.getWallet(user.id);
+      const caption = `⚠️ New Support Request #${ticket.id}\nFrom: ${ctx.from.first_name || 'User'} (${ctx.from.username ? '@' + ctx.from.username : 'no username'} / ID: ${ctx.from.id})\nWallet Balance: ${walletInfo?.balance ?? 0} ETB\n\nMessage: ${userMsg}`;
+      const keyboard = Markup.inlineKeyboard([
+        [
+          Markup.button.callback('Reply', `admin:support:reply:${ticket.id}`),
+          Markup.button.callback('Resolve', `admin:support:resolve:${ticket.id}`)
+        ]
+      ]);
+
+      const adminIdsStr = config.ADMIN_TELEGRAM_IDS || '';
+      for (const adminId of adminIdsStr.split(',').map((value) => Number(value.trim())).filter(Boolean)) {
+        try {
+          await bot.telegram.sendMessage(adminId, caption, keyboard);
+        } catch (err) {
+          console.error(`Failed to send support notification to admin ${adminId}:`, err);
+        }
+      }
+
+      await ctx.reply('Thank you! Your help request has been sent to our support team.', Markup.keyboard([['🎟️ Play', '💰 Wallet'], ['💳 Deposit', '💸 Withdraw'], ['📜 History', '💬 Support', '❓ Help']]).resize());
+      scenes.delete(ctx.from.id);
+      return;
+    }
+
+    if (state.state === 'admin_reply_support') {
+      const replyMsg = ctx.message.text;
+      const ticketId = state.ticketId;
+      if (!ticketId) {
+        await ctx.reply('Error: Ticket ID not found in session.');
+        scenes.delete(ctx.from.id);
+        return;
+      }
+
+      const ticket = await storage.getSupportTicketById(ticketId);
+      if (!ticket) {
+        await ctx.reply('Error: Ticket not found.');
+        scenes.delete(ctx.from.id);
+        return;
+      }
+
+      const targetUser = await storage.getUserById(ticket.userId);
+      if (!targetUser) {
+        await ctx.reply('Error: User not found for this ticket.');
+        scenes.delete(ctx.from.id);
+        return;
+      }
+
+      await storage.resolveSupportTicket(ticketId, replyMsg);
+
+      try {
+        await bot.telegram.sendMessage(targetUser.telegramId, `✉️ Support Update (Ticket #${ticketId}):\n\n${replyMsg}`);
+        await ctx.reply(`Reply sent to user ${targetUser.firstName || targetUser.telegramId}.`);
+      } catch (err) {
+        await ctx.reply(`Failed to send reply to user: ${(err as Error).message}`);
+      }
+
+      scenes.delete(ctx.from.id);
       return;
     }
 
@@ -936,7 +1140,8 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
       if (depositId) {
         await storage.updateDepositScreenshot(depositId, message.photo[0].file_id);
         const deposit = await storage.getDepositById(depositId);
-        const caption = `New deposit request\nUser: ${ctx.from?.username ?? ctx.from?.first_name ?? 'Unknown'}\nAmount: ${deposit?.amount ?? 'n/a'}\nDeposit ID: ${depositId}`;
+        const walletInfo = await storage.getWallet(user.id);
+        const caption = `New deposit request\nUser: ${ctx.from?.username ?? ctx.from?.first_name ?? 'Unknown'}\nAmount: ${deposit?.amount ?? 'n/a'}\nDeposit ID: ${depositId}\nWallet Balance: ${walletInfo?.balance ?? 0} ETB`;
         const keyboard = Markup.inlineKeyboard([
           [Markup.button.callback('Approve', `admin:deposit:approve:${depositId}`), Markup.button.callback('Reject', `admin:deposit:reject:${depositId}`)]
         ]);
@@ -966,9 +1171,10 @@ export function createBotHandlers(bot: Telegraf, db: LibSQLDatabase) {
         return;
       }
       const withdrawal = await storage.createWithdrawal(user.id, amount, address);
+      const walletInfo = await storage.getWallet(user.id);
       
       // Notify admins about new withdrawal request
-      const caption = `New withdrawal request\nUser: ${ctx.from?.username ?? ctx.from?.first_name ?? 'Unknown'}\nAmount: ${amount}\nAddress: ${address}\nWithdrawal ID: ${withdrawal.id}`;
+      const caption = `New withdrawal request\nUser: ${ctx.from?.username ?? ctx.from?.first_name ?? 'Unknown'}\nAmount: ${amount}\nAddress: ${address}\nWithdrawal ID: ${withdrawal.id}\nWallet Balance: ${walletInfo?.balance ?? 0} ETB`;
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('Approve', `admin:withdrawal:approve:${withdrawal.id}`), Markup.button.callback('Reject', `admin:withdrawal:reject:${withdrawal.id}`)]
       ]);

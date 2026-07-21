@@ -93,8 +93,19 @@ export const admins = sqliteTable('admins', {
   createdAt: text('created_at').default('CURRENT_TIMESTAMP').notNull()
 });
 
+export const supportTickets = sqliteTable('support_tickets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  message: text('message').notNull(),
+  status: text('status').default('open').notNull(),
+  adminReply: text('admin_reply'),
+  createdAt: text('created_at').default('CURRENT_TIMESTAMP').notNull(),
+  resolvedAt: text('resolved_at')
+});
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   updatedAt: text('updated_at').default('CURRENT_TIMESTAMP').notNull()
 });
+

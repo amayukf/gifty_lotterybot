@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lucky100 Admin Dashboard</title>
+    <!-- Telegram Web App script -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-color: #0d1117;
+        --glass-bg: rgba(255, 255, 255, 0.05);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --text-primary: #ffffff;
+        --text-secondary: #8b949e;
+        --accent: #58a6ff;
+        --accent-glow: rgba(88, 166, 255, 0.5);
+        --success: #2ea043;
+        --danger: #da3633;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: "Inter", sans-serif;
+      }
+
+      body {
+        background-color: var(--bg-color);
+        background-image:
+          radial-gradient(
+            circle at 15% 50%,
+            rgba(88, 166, 255, 0.15) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 85% 30%,
+            rgba(138, 43, 226, 0.15) 0%,
+            transparent 50%
+          );
+        color: var(--text-primary);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      /* Glassmorphism utility */
+      .glass {
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+
+      .glass:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        background: linear-gradient(135deg, #fff, var(--accent));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .header p {
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .stat-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        margin: 8px 0;
+        color: var(--accent);
+        text-shadow: 0 0 10px var(--accent-glow);
+      }
+
+      .stat-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+      }
+
+      .stat-icon {
+        font-size: 20px;
+        margin-bottom: 4px;
+      }
+
+      .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .list-card {
+        margin-bottom: 16px;
+      }
+
+      .list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--glass-border);
+      }
+
+      .list-item:last-child {
+        border-bottom: none;
+      }
+
+      .loader {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 200px;
+        font-size: 18px;
+        color: var(--accent);
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--glass-border);
+        border-top: 4px solid var(--accent);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      #app {
+        display: none;
+      }
+
+      .status-badge {
+        font-size: 10px;
+        padding: 4px 8px;
+        border-radius: 12px;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .status-open {
+        background: rgba(46, 160, 67, 0.2);
+        color: var(--success);
+      }
+      .status-drawn {
+        background: rgba(88, 166, 255, 0.2);
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader" class="loader">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="app">
+      <div class="header">
+        <h1>Lucky100 Overview</h1>
+        <p id="admin-name">Admin Dashboard</p>
+      </div>
+
+      <div class="grid">
+        <div class="glass stat-card">
+          <span class="stat-icon">👥</span>
+          <span class="stat-value" id="total-users">-</span>
+          <span class="stat-label">Total Users</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-icon">💰</span>
+          <span class="stat-value" id="total-balance">-</span>
+          <span class="stat-label">Total Circulating</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-icon">🎟️</span>
+          <span class="stat-value" id="tickets-sold">-</span>
+          <span class="stat-label">Tickets Sold</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-icon">💳</span>
+          <span class="stat-value" id="total-deposits">-</span>
+          <span class="stat-label">Approved Deposits</span>
+        </div>
+      </div>
+
+      <div class="glass list-card">
+        <div class="section-title">🎰 Active Round</div>
+        <div id="active-round-info">Loading...</div>
+      </div>
+    </div>
+
+    <script>
+      const tg = window.Telegram.WebApp;
+      tg.expand();
+      tg.ready();
+
+      if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        document.getElementById("admin-name").innerText =
+          `Welcome, ${tg.initDataUnsafe.user.first_name}!`;
+      }
+
+      async function fetchDashboardData() {
+        try {
+          // Pass Telegram initData for secure validation
+          const initData = tg.initData || "";
+          const response = await fetch("/api/admin/data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              initData: initData,
+              userId: tg.initDataUnsafe?.user?.id,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to load data or Unauthorized.");
+          }
+
+          const data = await response.json();
+
+          document.getElementById("total-users").innerText = data.totalUsers;
+          document.getElementById("total-balance").innerText =
+            data.totalBalance;
+          document.getElementById("tickets-sold").innerText = data.totalTickets;
+          document.getElementById("total-deposits").innerText =
+            data.totalDeposits;
+
+          const roundContainer = document.getElementById("active-round-info");
+          if (data.activeRound) {
+            roundContainer.innerHTML = `
+                        <div class="list-item">
+                            <div>
+                                <div style="font-weight: 600;">Round #${data.activeRound.roundNumber}</div>
+                                <div style="font-size: 12px; color: var(--text-secondary);">Tickets Sold: ? / ${data.activeRound.maxTickets}</div>
+                            </div>
+                            <span class="status-badge status-${data.activeRound.status}">${data.activeRound.status}</span>
+                        </div>
+                        <div class="list-item">
+                            <div style="font-size: 13px; color: var(--text-secondary);">Ticket Price: <span style="color:var(--text-primary)">${data.activeRound.ticketPrice} ETB</span></div>
+                        </div>
+                    `;
+          } else {
+            roundContainer.innerHTML =
+              '<div style="color: var(--text-secondary); padding: 10px 0;">No active round currently.</div>';
+          }
+
+          document.getElementById("loader").style.display = "none";
+          document.getElementById("app").style.display = "block";
+        } catch (error) {
+          console.error("Dashboard error:", error);
+          document.getElementById("loader").innerHTML =
+            `<div style="color: var(--danger);">Failed to load dashboard. Access Denied.</div>`;
+        }
+      }
+
+      // Initialize fetching on load
+      fetchDashboardData();
+    </script>
+  </body>
+</html>

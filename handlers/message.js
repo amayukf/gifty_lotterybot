@@ -4,7 +4,7 @@ import * as scheduler from '../lib/scheduler.js';
 import { config, isAdmin } from '../lib/config.js';
 import { generateTicketGrid } from '../lib/keyboard.js';
 
-export default async function (message) {
+export default async function (message, workerOrigin = '') {
   if (!message || !message.from || !message.chat) {
     return;
   }
@@ -45,17 +45,31 @@ export default async function (message) {
   }
 
   // Define main reply keyboard
+  const keyboardRows = [
+    [{ text: '🎟️ Play' }, { text: '💰 Wallet' }],
+    [{ text: '💳 Deposit' }, { text: '💸 Withdraw' }],
+    [{ text: '📜 History' }, { text: '💬 Support' }, { text: '❓ Help' }]
+  ];
+  if (isAdmin(telegramId)) {
+    keyboardRows.push([{ text: '⚙️ Admin Panel' }]);
+  }
   const mainKeyboard = {
-    keyboard: [
-      [{ text: '🎟️ Play' }, { text: '💰 Wallet' }],
-      [{ text: '💳 Deposit' }, { text: '💸 Withdraw' }],
-      [{ text: '📜 History' }, { text: '❓ Help' }]
-    ],
+    keyboard: keyboardRows,
     resize_keyboard: true
   };
 
   // 3. Process commands / global keyboard overrides if any
   const normalizedText = text.trim();
+
+  if (normalizedText === '/cancel') {
+    await storage.clearUserScene(telegramId);
+    await api.sendMessage({
+      chat_id: chatId,
+      text: 'Command canceled.',
+      reply_markup: mainKeyboard
+    });
+    return;
+  }
 
   if (normalizedText.startsWith('/start')) {
     const name = message.from.first_name || 'player';
@@ -84,7 +98,6 @@ export default async function (message) {
 
     const tickets = await storage.getTicketsForRound(round.id);
     const takenNumbers = new Set(tickets.map(t => t.ticketNumber));
-    const remaining = round.maxTickets - tickets.length;
 
     await storage.setUserScene(telegramId, 'buy_ticket');
     
@@ -92,7 +105,7 @@ export default async function (message) {
 
     await api.sendMessage({
       chat_id: chatId,
-      text: `🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice} USDT\n📊 Tickets remaining: ${remaining}/${round.maxTickets}\n\nSelect a number from the grid below to purchase (or type it):`,
+      text: `🎟️ Round #${round.roundNumber}\n🎫 Price: ${round.ticketPrice} ETB\n📊 Tickets sold: ${tickets.length}\n\nSelect a number from the grid below to purchase (or type it):`,
       reply_markup: replyMarkup
     });
     return;
@@ -103,7 +116,7 @@ export default async function (message) {
     const wallet = await storage.getWallet(user.id);
     await api.sendMessage({
       chat_id: chatId,
-      text: `💰 Your Wallet\nBalance: ${wallet?.balance ?? 0}`
+      text: `💰 Your Wallet\nBalance: ${wallet?.balance ?? 0} ETB`
     });
     return;
   }
@@ -118,10 +131,16 @@ export default async function (message) {
   }
 
   if (normalizedText === '💸 Withdraw' || normalizedText.startsWith('/withdraw')) {
+    const wallet = await storage.getWallet(user.id);
+    if (!wallet || wallet.balance <= 0) {
+      await api.sendMessage({ chat_id: chatId, text: '❌ You do not have sufficient balance to make a withdrawal.' });
+      return;
+    }
+
     await storage.setUserScene(telegramId, 'withdraw_request');
     await api.sendMessage({
       chat_id: chatId,
-      text: '💸 To withdraw:\nSend your request like this:\n[amount] [wallet address]\nExample: 20 USDTTRC20'
+      text: '💸 To withdraw:\nSend your request like this:\n[amount] [bank account or Telebirr number]\nExample: 500 Telebirr 0912345678'
     });
     return;
   }
@@ -158,7 +177,16 @@ export default async function (message) {
     const adminLine = isUserAdmin ? '\n/admin - Admin dashboard' : '';
     await api.sendMessage({
       chat_id: chatId,
-      text: `🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link${adminLine}`
+      text: `🎯 Lucky100 Guide:\n/play - Join the lottery round\n/wallet - Check your balance\n/deposit - Deposit funds\n/withdraw - Request a withdrawal\n/history - See your transactions\n/referral - Get your referral link\n/support - Contact support${adminLine}`
+    });
+    return;
+  }
+
+  if (normalizedText === '💬 Support' || normalizedText.startsWith('/support')) {
+    await storage.setUserScene(telegramId, 'support_message');
+    await api.sendMessage({
+      chat_id: chatId,
+      text: '💬 Please send your message or question below. Our support team will reply directly to this chat.\n\nSend /cancel to discard.'
     });
     return;
   }
@@ -174,7 +202,7 @@ export default async function (message) {
   }
 
   // --- ADMIN COMMANDS ---
-  if (normalizedText.startsWith('/admin')) {
+  if (normalizedText === '⚙️ Admin Panel' || normalizedText.startsWith('/admin')) {
     if (!isAdmin(telegramId)) {
       await api.sendMessage({ chat_id: chatId, text: 'Access denied.' });
       return;
@@ -187,6 +215,9 @@ export default async function (message) {
     const analytics = await storage.getAnalytics();
 
     const buttons = [
+      [
+        { text: '📊 Launch Dashboard', web_app: { url: workerOrigin + '/admin/dashboard' } }
+      ],
       [
         { text: 'Manage Deposits', callback_data: 'admin:show_deposits' },
         { text: 'Manage Withdrawals', callback_data: 'admin:show_withdrawals' }
@@ -210,6 +241,70 @@ export default async function (message) {
       text: `Admin dashboard\nPending deposits: ${pendingDeposits.length}\nPending withdrawals: ${pendingWithdrawals.length}\nRounds: ${rounds.length}\nTotal users: ${analytics.totalUsers}\nBanned users: ${analytics.totalBannedUsers}`,
       reply_markup: { inline_keyboard: buttons }
     });
+    return;
+  }
+
+  if (normalizedText.startsWith('/credit')) {
+    if (!isAdmin(telegramId)) {
+      await api.sendMessage({ chat_id: chatId, text: 'Access denied.' });
+      return;
+    }
+    const parts = normalizedText.split(/\s+/);
+    if (parts.length < 3) {
+      await api.sendMessage({ chat_id: chatId, text: 'Usage: /credit <user_id> <amount>' });
+      return;
+    }
+    const targetUserId = Number(parts[1]);
+    const amount = Number(parts[2]);
+    if (!Number.isFinite(targetUserId) || !Number.isFinite(amount) || amount <= 0) {
+      await api.sendMessage({ chat_id: chatId, text: 'Invalid user ID or amount.' });
+      return;
+    }
+
+    await storage.updateWalletBalance(targetUserId, amount);
+    await storage.addTransaction(targetUserId, 'admin_adjustment', amount, undefined, 'Admin credited balance');
+
+    await api.sendMessage({ chat_id: chatId, text: `Successfully credited ${amount} ETB to user ${targetUserId}.` });
+    const targetUser = await storage.getUserById(targetUserId);
+    if (targetUser) {
+      try {
+        await api.sendMessage({ chat_id: targetUser.telegramId, text: `💰 Your wallet has been credited with ${amount} ETB by an admin.` });
+      } catch (err) {
+        // ignore
+      }
+    }
+    return;
+  }
+
+  if (normalizedText.startsWith('/debit')) {
+    if (!isAdmin(telegramId)) {
+      await api.sendMessage({ chat_id: chatId, text: 'Access denied.' });
+      return;
+    }
+    const parts = normalizedText.split(/\s+/);
+    if (parts.length < 3) {
+      await api.sendMessage({ chat_id: chatId, text: 'Usage: /debit <user_id> <amount>' });
+      return;
+    }
+    const targetUserId = Number(parts[1]);
+    const amount = Number(parts[2]);
+    if (!Number.isFinite(targetUserId) || !Number.isFinite(amount) || amount <= 0) {
+      await api.sendMessage({ chat_id: chatId, text: 'Invalid user ID or amount.' });
+      return;
+    }
+
+    await storage.updateWalletBalance(targetUserId, -amount);
+    await storage.addTransaction(targetUserId, 'admin_adjustment', -amount, undefined, 'Admin debited balance');
+
+    await api.sendMessage({ chat_id: chatId, text: `Successfully debited ${amount} ETB from user ${targetUserId}.` });
+    const targetUser = await storage.getUserById(targetUserId);
+    if (targetUser) {
+      try {
+        await api.sendMessage({ chat_id: targetUser.telegramId, text: `📉 Your wallet has been debited ${amount} ETB by an admin.` });
+      } catch (err) {
+        // ignore
+      }
+    }
     return;
   }
 
@@ -632,8 +727,101 @@ export default async function (message) {
     return;
   }
 
+  if (normalizedText.startsWith('/export')) {
+    if (!isAdmin(telegramId)) {
+      await api.sendMessage({ chat_id: chatId, text: 'Access denied.' });
+      return;
+    }
+    const csvContent = await storage.exportTransactionsCSV();
+    
+    // Convert string to Blob using global Blob class available in Workers
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    // In FormData, attach the blog as the file parameter
+    await api.sendDocument({
+      chat_id: chatId,
+      document: blob,
+      caption: 'Here is the CSV export of all transactions.'
+    });
+    return;
+  }
+
   // --- 4. Scene Handler Logic ---
   const currentSceneState = user.sceneState;
+
+  if (currentSceneState === 'support_message') {
+    const ticket = await storage.createSupportTicket(user.id, normalizedText);
+    const walletInfo = await storage.getWallet(user.id);
+    
+    // Notify admins
+    const caption = `⚠️ New Support Request #${ticket.id}\nFrom: ${message.from.first_name || 'User'} (${message.from.username ? '@' + message.from.username : 'no username'} / ID: ${message.from.id})\nWallet Balance: ${walletInfo?.balance ?? 0} ETB\n\nMessage: ${normalizedText}`;
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: 'Reply', callback_data: `admin:support:reply:${ticket.id}` },
+          { text: 'Resolve', callback_data: `admin:support:resolve:${ticket.id}` }
+        ]
+      ]
+    };
+    for (const val of config.ADMIN_TELEGRAM_IDS.split(',').map((v) => Number(v.trim())).filter(Boolean)) {
+      try {
+        await api.sendMessage({ chat_id: val, text: caption, reply_markup: keyboard });
+      } catch (err) {
+        console.error(`Failed to send support notification to admin ${val}`, err);
+      }
+    }
+    
+    await storage.clearUserScene(telegramId);
+    await api.sendMessage({
+      chat_id: chatId,
+      text: 'Thank you! Your help request has been sent to our support team.',
+      reply_markup: mainKeyboard
+    });
+    return;
+  }
+
+  if (currentSceneState === 'admin_reply_support') {
+    const ticketId = user.depositId; // Reused depositId to store ticketId
+    if (!ticketId) {
+      await api.sendMessage({ chat_id: chatId, text: 'Error: Ticket ID not found in session.' });
+      await storage.clearUserScene(telegramId);
+      return;
+    }
+
+    const ticket = await storage.getSupportTicketById(ticketId);
+    if (!ticket) {
+      await api.sendMessage({ chat_id: chatId, text: 'Error: Ticket not found.' });
+      await storage.clearUserScene(telegramId);
+      return;
+    }
+
+    const targetUser = await storage.getUserById(ticket.userId);
+    if (!targetUser) {
+      await api.sendMessage({ chat_id: chatId, text: 'Error: User not found for this ticket.' });
+      await storage.clearUserScene(telegramId);
+      return;
+    }
+
+    await storage.resolveSupportTicket(ticketId, normalizedText);
+
+    try {
+      await api.sendMessage({
+        chat_id: targetUser.telegramId,
+        text: `✉️ Support Update (Ticket #${ticketId}):\n\n${normalizedText}`
+      });
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `Reply sent to user ${targetUser.firstName || targetUser.telegramId}.`
+      });
+    } catch (err) {
+      await api.sendMessage({
+        chat_id: chatId,
+        text: `Failed to send reply to user: ${err.message}`
+      });
+    }
+
+    await storage.clearUserScene(telegramId);
+    return;
+  }
 
   if (currentSceneState === 'deposit_amount') {
     const amount = Number(normalizedText);
@@ -657,7 +845,7 @@ export default async function (message) {
   if (currentSceneState === 'withdraw_request') {
     const parts = normalizedText.split(/\s+/);
     if (parts.length < 2) {
-      await api.sendMessage({ chat_id: chatId, text: 'Please send amount and wallet address.' });
+      await api.sendMessage({ chat_id: chatId, text: 'Please send amount and bank/Telebirr address.' });
       return;
     }
     const amount = Number(parts[0]);
@@ -666,10 +854,17 @@ export default async function (message) {
       await api.sendMessage({ chat_id: chatId, text: 'Please send a valid amount.' });
       return;
     }
+    
+    const walletInfo = await storage.getWallet(user.id);
+    if (!walletInfo || walletInfo.balance < amount) {
+      await api.sendMessage({ chat_id: chatId, text: `❌ Insufficient balance. You only have ${walletInfo?.balance ?? 0} ETB.` });
+      return;
+    }
+
     const withdrawal = await storage.createWithdrawal(user.id, amount, address);
     
     // Notify admins
-    const caption = `New withdrawal request\nUser: ${message.from.username || message.from.first_name || 'Unknown'}\nAmount: ${amount}\nAddress: ${address}\nWithdrawal ID: ${withdrawal.id}`;
+    const caption = `New withdrawal request\nUser: ${message.from.username || message.from.first_name || 'Unknown'}\nAmount: ${amount}\nAddress: ${address}\nWithdrawal ID: ${withdrawal.id}\nWallet Balance: ${walletInfo?.balance ?? 0} ETB`;
     const keyboard = {
       inline_keyboard: [
         [
@@ -737,7 +932,8 @@ export default async function (message) {
       await storage.updateDepositScreenshot(depositId, photo.file_id);
       
       const deposit = await storage.getDepositById(depositId);
-      const caption = `New deposit request\nUser: ${message.from.username || message.from.first_name || 'Unknown'}\nAmount: ${deposit?.amount ?? 'n/a'}\nDeposit ID: ${depositId}`;
+      const walletInfo = await storage.getWallet(user.id);
+      const caption = `New deposit request\nUser: ${message.from.username || message.from.first_name || 'Unknown'}\nAmount: ${deposit?.amount ?? 'n/a'}\nDeposit ID: ${depositId}\nWallet Balance: ${walletInfo?.balance ?? 0} ETB`;
       const keyboard = {
         inline_keyboard: [
           [

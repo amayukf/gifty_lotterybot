@@ -96,8 +96,19 @@ export const admins = table('admins', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull()
 });
 
+export const supportTickets = table('support_tickets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull(),
+  message: text('message').notNull(),
+  status: text('status').default('open').notNull(),
+  adminReply: text('admin_reply'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
+  resolvedAt: text('resolved_at')
+});
+
 export const settings = table('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).notNull()
 });
+

@@ -270,4 +270,34 @@ export class StorageService {
   async creditReferral(referralId: number) {
     await this.db.update(schema.referrals).set({ status: 'credited' }).where(eq(schema.referrals.id, referralId));
   }
+
+  async createSupportTicket(userId: number, message: string) {
+    const result = await this.db.insert(schema.supportTickets).values({ userId, message, status: 'open' }).returning();
+    return result[0];
+  }
+
+  async getSupportTicketById(id: number) {
+    const tickets = await this.db.select().from(schema.supportTickets).where(eq(schema.supportTickets.id, id)).limit(1);
+    return tickets[0] || null;
+  }
+
+  async resolveSupportTicket(id: number, adminReply?: string) {
+    await this.db.update(schema.supportTickets)
+      .set({ 
+        status: 'resolved', 
+        adminReply: adminReply || null, 
+        resolvedAt: new Date().toISOString() 
+      })
+      .where(eq(schema.supportTickets.id, id));
+    return this.getSupportTicketById(id);
+  }
+
+  async exportTransactionsCSV(): Promise<string> {
+    const transactions = await this.db.select().from(schema.transactions).orderBy(sql`${schema.transactions.createdAt} DESC`);
+    const headers = ['id', 'user_id', 'type', 'amount', 'round_id', 'description', 'created_at'];
+    const rows = transactions.map(t => [
+      t.id, t.userId, t.type, t.amount, t.relatedId || '', `"${(t.description || '').replace(/"/g, '""')}"`, t.createdAt
+    ].join(','));
+    return [headers.join(','), ...rows].join('\n');
+  }
 }
