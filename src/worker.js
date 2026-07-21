@@ -50,7 +50,19 @@ export default {
           analytics.activeRound.ticketsSold = tickets.length;
         }
 
-        const pendingDeposits = await storage.listPendingDeposits();
+        const rawPendingDeposits = await storage.listPendingDeposits();
+        const pendingDeposits = [];
+        for (const dep of rawPendingDeposits) {
+          let screenshotUrl = null;
+          if (dep.screenshotPath) {
+            try {
+              const fileData = await apiInstance.getFile({ file_id: dep.screenshotPath });
+              if (fileData && fileData.file_path) screenshotUrl = apiInstance.getFileUrl(fileData.file_path);
+            } catch (e) { /* silent fail */ }
+          }
+          pendingDeposits.push({ ...dep, screenshotUrl });
+        }
+
         const pendingWithdrawals = await storage.listPendingWithdrawals();
         
         const settings = {
