@@ -840,6 +840,37 @@ export default async function (message, workerOrigin = '') {
       await api.sendMessage({ chat_id: chatId, text: 'Please send a photo to confirm the deposit.' });
       return;
     }
+
+    const photo = message.photo[message.photo.length - 1];
+    const depositId = Number(user.sceneData);
+    
+    if (depositId) {
+      await storage.updateDepositScreenshot(depositId, photo.file_id);
+    }
+    
+    await storage.clearUserScene(telegramId);
+    
+    await api.sendMessage({
+      chat_id: chatId,
+      text: '✅ Your deposit request and payment proof have been sent to admins for verification. Please wait for approval.'
+    });
+
+    // Notify admins directly in chat
+    const caption = `💳 New deposit request pending approval\nUser: ${message.from.username ? '@' + message.from.username : message.from.first_name || 'Unknown'}\nDeposit ID: ${depositId}`;
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: 'Approve', callback_data: `admin:deposit:approve:${depositId}` },
+          { text: 'Reject', callback_data: `admin:deposit:reject:${depositId}` }
+        ]
+      ]
+    };
+    for (const val of config.ADMIN_TELEGRAM_IDS.split(',').map((v) => Number(v.trim())).filter(Boolean)) {
+      try {
+        await api.sendPhoto({ chat_id: val, photo: photo.file_id, caption, reply_markup: keyboard });
+      } catch (err) { }
+    }
+    return;
   }
 
   if (currentSceneState === 'withdraw_request') {
