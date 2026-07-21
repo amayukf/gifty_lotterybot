@@ -60,11 +60,23 @@ export default {
           defaultFeePercentage: await storage.getSetting('default_fee_percentage') ?? '20'
         };
         
+        const allRounds = await storage.getAllRounds();
+        const pastRounds = [];
+        for (const r of allRounds.filter(x => x.status === 'drawn').slice(0, 10)) {
+          let winnerName = 'Unknown';
+          if (r.winnerId) {
+             const userRec = await storage.getUserById(r.winnerId);
+             if (userRec) winnerName = userRec.username ? `@${userRec.username}` : (userRec.firstName || userRec.telegramId);
+          }
+          pastRounds.push({ ...r, winnerName });
+        }
+
         return new Response(JSON.stringify({
           ...analytics,
           pendingDeposits,
           pendingWithdrawals,
-          settings
+          settings,
+          pastRounds
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
