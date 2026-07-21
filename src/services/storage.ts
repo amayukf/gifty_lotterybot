@@ -97,7 +97,7 @@ export class StorageService {
   }
 
   async updateDepositScreenshot(id: number, screenshotPath: string) {
-    await this.db.update(schema.deposits).set({ screenshotPath, updatedAt: new Date().toISOString() }).where(eq(schema.deposits.id, id));
+    await this.db.update(schema.deposits).set({ screenshotPath, updatedAt: new Date().toISOString() }).where(eq(schema.deposits.id, id)).execute();
   }
 
   async getDepositById(id: number) {
