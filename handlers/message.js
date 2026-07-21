@@ -993,12 +993,6 @@ export default async function (message, workerOrigin = '') {
         text: 'Deposit proof received. Admin review pending.'
       });
       return;
-    } else {
-      await api.sendMessage({
-        chat_id: chatId,
-        text: 'Received photo, but you are not currently in a deposit workflow. Use /deposit first.'
-      });
-      return;
     }
   }
 
