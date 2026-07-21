@@ -64,8 +64,8 @@ export default {
         const pastRounds = [];
         for (const r of allRounds.filter(x => x.status === 'drawn').slice(0, 10)) {
           let winnerName = 'Unknown';
-          if (r.winnerId) {
-             const userRec = await storage.getUserById(r.winnerId);
+          if (r.winnerUserId) {
+             const userRec = await storage.getUserById(r.winnerUserId);
              if (userRec) winnerName = userRec.username ? `@${userRec.username}` : (userRec.firstName || userRec.telegramId);
           }
           pastRounds.push({ ...r, winnerName });
